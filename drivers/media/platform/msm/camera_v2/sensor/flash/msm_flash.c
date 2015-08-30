@@ -961,15 +961,23 @@ static long msm_flash_subdev_do_ioctl(
 	struct file *file, unsigned int cmd, void *arg)
 {
 	int32_t rc = 0;
-	struct video_device *vdev = video_devdata(file);
-	struct v4l2_subdev *sd = vdev_to_v4l2_subdev(vdev);
-	struct msm_flash_cfg_data_t32 *u32 =
-		(struct msm_flash_cfg_data_t32 *)arg;
+	struct video_device *vdev;
+	struct v4l2_subdev *sd;
+	struct msm_flash_cfg_data_t32 *u32;
 	struct msm_flash_cfg_data_t flash_data;
 	struct msm_flash_init_info_t32 flash_init_info32;
 	struct msm_flash_init_info_t flash_init_info;
 
 	CDBG("Enter");
+
+	if (!file || !arg) {
+		pr_err("%s:failed NULL parameter\n", __func__);
+		return -EINVAL;
+	}
+	vdev = video_devdata(file);
+	sd = vdev_to_v4l2_subdev(vdev);
+	u32 = (struct msm_flash_cfg_data_t32 *)arg;
+
 	flash_data.cfg_type = u32->cfg_type;
 	switch (cmd) {
 	case VIDIOC_MSM_FLASH_CFG32:
