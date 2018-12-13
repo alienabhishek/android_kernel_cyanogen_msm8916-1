@@ -31,6 +31,20 @@
 #include <linux/qpnp/power-on.h>
 #include "yl_pm8916_vbus.h"
 
+#ifdef CONFIG_QUICK_CHARGE
+// Include the Header File of Quick Charge for Access to the Status and Dynamic Current of the Driver as well as for Reporting the Battery-Level to the Driver.
+#include <linux/Quick_Charge.h>
+
+// Variable to identify the Type of Charging i.e., 0 for USB and 1 for AC. 
+static int Charging_Type;
+// Variable to Check when Quick Charge is Toggled On or Off.
+static int Toggle_Mirror = 0;
+// Variable to Check when Charging-Profile is Changed.
+static int CP_Mirror = 1;
+// Variable to Store a Copy of Max. Current (mA) as Defined in DT.
+static int DT_Current;
+#endif
+
 struct fan5405_chip {
 	struct device         *dev;
 	struct i2c_client      *client;
@@ -1060,9 +1074,24 @@ static int fan5405_get_prop_batt_status(struct fan5405_chip *chip)
 		if (chip->batt_capa >= 100)
 			ret.intval = POWER_SUPPLY_STATUS_FULL;
 		else
+		#ifdef CONFIG_QUICK_CHARGE
+		{
+		   // Report the Status of Charging to Quick Charge Driver.
+		   charging (1);
+
+		   ret.intval = POWER_SUPPLY_STATUS_CHARGING;
+		}
+		#else
 			ret.intval = POWER_SUPPLY_STATUS_CHARGING;
+		#endif
 	} else {
 		ret.intval = POWER_SUPPLY_STATUS_DISCHARGING;
+		
+		#ifdef CONFIG_QUICK_CHARGE
+		// If the Quick Charge Driver is Enabled, report the Status of Dis-Charging.
+		if (QC_Toggle == 1)
+		   charging (0);
+		#endif
 	}
 #if 0
 	chip->charge_stat = fan5405_get_stat(chip);
@@ -1141,6 +1170,11 @@ static int fan5405_get_prop_current_now(struct fan5405_chip *chip)
 
        ret.intval = chip->chg_curr_now;
 
+       #ifdef CONFIG_QUICK_CHARGE
+       // Report Actual Current (mA) to Quick Charge Driver.
+       actual_current (ret.intval);
+       #endif
+
        return ret.intval;
 }
 
@@ -1165,6 +1199,10 @@ static bool batt_full_flag = false;
 
 static int fan5405_get_prop_batt_capa(struct fan5405_chip *chip)
 {
+	#ifdef CONFIG_QUICK_CHARGE
+	int rc;
+	#endif
+
 	union power_supply_propval ret = {0,};
 
         if (chip->battery_psy != NULL) {
@@ -1214,6 +1252,45 @@ static int fan5405_get_prop_batt_capa(struct fan5405_chip *chip)
                 pr_err("battery property is unregisted . \n");
                 chip->batt_capa = 88;
         }
+
+	#ifdef CONFIG_QUICK_CHARGE
+	// Report the Battery-Level to the Quick Charge Driver (only if it is Enabled).
+	if (QC_Toggle == 1 || Toggle_Mirror != QC_Toggle || CP_Mirror != Charging_Profile)
+	{
+	   batt_level (chip->batt_capa);
+
+	   // Update Value of Current (mA) only when Battery is Being Charged.
+	   if (Charge_Status == 1)
+	   {
+	      if (chip->batt_capa == 60 || chip->batt_capa == 90 || Toggle_Mirror != QC_Toggle || CP_Mirror != Charging_Profile)
+	      {
+	         // If USB-Charging is Going On, Set Current-Limit as per DT.
+	         if (Charging_Type == 0)
+	         {
+		    chip->set_ivbus_max = DT_Current;
+		    chip->chg_curr_max = chip->set_ivbus_max; 
+		    chip->chg_curr_now = chip->chg_curr_max;   
+
+		    // Update vBUS Current-Limit (mA).
+		    rc = fan5405_set_ivbus_max (chip, chip->set_ivbus_max);
+	         }
+	         else
+	         {
+	             // If Flow of Controls comes here, then AC-Charging is Going On.
+		     chip->set_ivbus_max = Dynamic_Current;
+		     chip->chg_curr_max = chip->set_ivbus_max;
+		     chip->chg_curr_now = chip->chg_curr_max; 
+
+		     // Update vBUS Current-Limit (mA).
+		     rc = fan5405_set_ivbus_max (chip, chip->set_ivbus_max);   
+	         }
+		 // Store New Value of Variables in Mirrors.
+		 Toggle_Mirror = QC_Toggle;
+		 CP_Mirror = Charging_Profile;
+	      }
+	   }
+	}
+	#endif
 
         return chip->batt_capa;
 }
@@ -1358,8 +1435,71 @@ static void fan5405_external_power_changed(struct power_supply *psy)
 		dev_err(chip->dev,
 			"could not read USB current_max property, rc=%d\n", rc);
 	else
-		chip->set_ivbus_max = prop.intval / 1000;
-
+        #ifdef CONFIG_QUICK_CHARGE
+        {
+           if (!((prop.intval / 1000) == 0))
+           {
+	      if (QC_Toggle == 1) 
+	      {
+	         // If Current (mA) is Equal to 500 mA, then USB-Charger is Connected.
+                 if ((prop.intval / 1000) == 500) 
+	         {
+	            // Set vBUS Current-Limit (mA) as per DT.
+                    pr_info("Using Quick Charge USB-Current (mA) %d", DT_Current);
+                    chip->set_ivbus_max = DT_Current;
+		    // Store USB-Current (mA) Value Correctly.
+		    chip->chg_curr_max = chip->set_ivbus_max;
+		    chip->chg_curr_now = chip->chg_curr_max;
+		    // Store Charging-Type i.e., 0 for USB.
+	   	    Charging_Type = 0;
+	         }
+                 else 
+	         {
+		     // If Flow of Control comes here, then AC-Charger is Connected.
+                     pr_info("Using Quick Charge AC-Current (mA) %d", Dynamic_Current);
+		     // Set vBUS Current-Limit (mA) Equal to Dynamic Current (mA).
+                     chip->set_ivbus_max = Dynamic_Current;
+		     // Store AC-Current (mA) Value Correctly.
+		     chip->chg_curr_max = chip->set_ivbus_max;
+		     chip->chg_curr_now = chip->chg_curr_max;
+		     // Store Charging-Type i.e., 1 for AC.
+	   	     Charging_Type = 1;
+                 }
+              }
+              else
+	      {
+		  // If Quick Charge is Disabled, Restore Default Value of Current (mA). 
+		  if ((prop.intval / 1000) == 500)
+		  {  
+		     // If USB-Charger is Connected, Restore Default Value of Current (mA). 
+                     pr_info("Using Default USB-Current (mA) %d", prop.intval / 1000);
+		     chip->set_ivbus_max = prop.intval / 1000;
+		     chip->chg_curr_max = chip->set_ivbus_max;
+		     chip->chg_curr_now = chip->chg_curr_max;
+		     // Store Charging-Type i.e., 0 for USB.
+	   	     Charging_Type = 0;
+		  }
+	 	  else
+		  {
+		      // If Flow of Control comes here, then AC-Charger is Connected.
+		      pr_info("Using Default AC-Current (mA) %d", DT_Current);
+		      // Set vBUS Current-Limit (mA) as per DT.
+		      chip->set_ivbus_max = DT_Current;
+		      // Set Current (mA) as per DT.
+		      chip->chg_curr_max = chip->set_ivbus_max;
+		      chip->chg_curr_now = chip->chg_curr_max;
+	  	      // Store Charging-Type i.e., 1 for AC.
+	   	      Charging_Type = 1;
+		  }	  
+	      }
+	   }
+	   else
+	       chip->set_ivbus_max = 0;
+        }
+	#else
+	     // If Quick Charge is Not Compiled, Leave Current (mA) Value Untouched.
+	     chip->set_ivbus_max = prop.intval / 1000;
+	#endif
 
 	rc = fan5405_set_ivbus_max(chip, chip->set_ivbus_max); //VBUS CURRENT
         /*add by sunxiaogang@yulong.com no suspend on charging 2014.12.09*/
@@ -1428,9 +1568,25 @@ static int fan5405_parse_dt(struct fan5405_chip *chip)
 	if (rc < 0)
 		return -EINVAL;
 
+#ifdef CONFIG_QUICK_CHARGE
+	// If Quick Charge is Enabled, then Set the Max. Current to the Value of Dynamic Current of the Driver.
+	if (QC_Toggle == 1)
+	   chip->chg_curr_max = Dynamic_Current;
+	else
+	{
+	// If Quick Charge is Disabled, then Restore the Max. Current Value to the Default as Specified in DTB.
+	    rc = of_property_read_u32(node, "yl,max-charge-current-mA", &chip->chg_curr_max);
+	    if (rc < 0)
+	       return -EINVAL;
+	// Store a Copy of Max. Current (mA) as Defined in DT.
+	DT_Current = chip->chg_curr_max;
+	}
+#else
+	// If Quick Charge is not Compiled, then Read the Default Value only.
 	rc = of_property_read_u32(node, "yl,max-charge-current-mA", &chip->chg_curr_max);
 	if (rc < 0)
-		return -EINVAL;
+	   return -EINVAL;
+#endif
 	chip->chg_curr_now = chip->chg_curr_max;
 
 	rc = of_property_read_u32(node, "yl,term-current-mA", &chip->iterm_ma);
@@ -1606,7 +1762,14 @@ static int fan5405_probe(struct i2c_client *client, const struct i2c_device_id *
 	if(FAN5405_IC_VENDER != fan5405_get_ic_vender(chip)){
 		dev_err(&client->dev, "this IC is not FAN5405, exit fan5405 probe \n");
 		return -EINVAL;
-	}
+	} 
+	dev_err(&client->dev, "This IC is FAN5405,  probe \n");
+
+	#ifdef CONFIG_QUICK_CHARGE
+	// IC is "FAN5405". Report this to Quick Charge Driver.
+	ic_vendor (0);
+	#endif
+
 	/* 1. set charge safety register */
 	if (!chip->safe_curr)
 		chip->safe_curr = 1500;
@@ -1865,3 +2028,4 @@ module_i2c_driver(fan5405_driver);
 MODULE_DESCRIPTION("FAN5405 charger IC driver");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("i2c:fan5405_charger");
+
