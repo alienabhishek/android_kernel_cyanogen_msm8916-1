@@ -126,10 +126,10 @@ static struct regulator *vdd_mx;
 static struct cpufreq_frequency_table *pending_freq_table_ptr;
 static int pending_cpu_freq = -1;
 static long *tsens_temp_at_panic;
-unsigned int temp_threshold = 69;
-unsigned int poll_ms = 250;
-unsigned int core_limit_temp_degC = 80;
-unsigned int hotplug_temp_degC = 95;
+unsigned int temp_threshold = 65;
+unsigned int poll_ms = 1000;
+unsigned int core_limit_temp_degC = 70;
+unsigned int hotplug_temp_degC = 75;
 
 static LIST_HEAD(devices_list);
 static LIST_HEAD(thresholds_list);
