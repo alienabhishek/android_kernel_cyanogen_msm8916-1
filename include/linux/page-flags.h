@@ -347,9 +347,6 @@ static inline void ClearPageCompound(struct page *page)
 	ClearPageHead(page);
 }
 #endif
-
-#define PG_head_mask ((1L << PG_head))
-
 #else
 /*
  * Reduce page flag use as much as possible by overlapping
