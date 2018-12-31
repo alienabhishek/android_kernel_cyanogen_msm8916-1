@@ -40,5 +40,4 @@ static inline int in_exception_text(unsigned long ptr)
 	       ptr < (unsigned long)&__exception_text_end;
 }
 
-static inline void get_pct_hook_init(void) {}
 #endif
