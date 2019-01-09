@@ -29,12 +29,12 @@ yellow='\033[0;33m'
 red='\033[0;31m'
 nocol='\033[0m'
 
-export CROSS_COMPILE="/home/abhishek/UBERTC/bin/aarch64-linux-android-"
+export CROSS_COMPILE="~/aarch64-linux-android/bin/aarch64-opt-linux-android-"
 export ARCH=arm64
 export SUBARCH=arm64
 export KBUILD_BUILD_USER="alienabhishek"
 export KBUILD_BUILD_HOST="frictionless_machine"
-STRIP="/home/abhishek/UBERTC/bin/aarch64-linux-android-strip"
+# STRIP="/home/abhishek/UBERTC/bin/aarch64-linux-android-strip"
 MODULES_DIR=$KERNEL_DIR/drivers/staging/prima/
 
 compile_kernel ()
@@ -75,14 +75,14 @@ echo "**** Verifying ZIP MAKER Directory ****"
 echo "**** Removing leftovers ****"
 rm -rf $ZIP_MAKER_DIR/tools/dt.img
 rm -rf $ZIP_MAKER_DIR/tools/Image
-rm -rf $ZIP_MAKER_DIR/system/lib/modules/wlan.ko
+rm -rf $ZIP_MAKER_DIR/system/vendor/lib/modules/wlan.ko
 
 echo "**** Copying Image ****"
 cp $KERNEL_DIR/arch/arm64/boot/Image $ZIP_MAKER_DIR/tools/
 echo "**** Copying dtb ****"
 cp $KERNEL_DIR/arch/arm64/boot/dt.img $ZIP_MAKER_DIR/tools/
 echo "**** Copying modules ****"
-cp $KERNEL_DIR/drivers/staging/prima/wlan.ko $ZIP_MAKER_DIR/system/lib/modules/
+cp $KERNEL_DIR/drivers/staging/prima/wlan.ko $ZIP_MAKER_DIR/system/vendor/lib/modules/
 
 echo "**** Time to zip up! ****"
 cd $ZIP_MAKER_DIR/
