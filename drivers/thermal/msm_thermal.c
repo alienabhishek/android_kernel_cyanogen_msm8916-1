@@ -2782,12 +2782,10 @@ static int hotplug_init_cpu_offlined(void)
 
 		if (temp >= hotplug_temp_degC)
 			cpus[cpu].offline = 1;
-<<<<<<< HEAD
-		else
-=======
+
 		else if (temp <= (hotplug_temp_degC -
 			msm_thermal_info.hotplug_temp_hysteresis_degC))
->>>>>>> 136f55d... temp limit parameter fix
+
 			cpus[cpu].offline = 0;
 	}
 	mutex_unlock(&core_control_mutex);
@@ -3895,8 +3893,7 @@ static struct kernel_param_ops module_ops = {
 module_param_cb(enabled, &module_ops, &enabled, 0644);
 MODULE_PARM_DESC(enabled, "enforce thermal limit on cpu");
 
-<<<<<<< HEAD
-=======
+
 /* Poll ms */
 module_param(poll_ms, uint, 0755);
 /* Temp Threshold */
@@ -3904,7 +3901,7 @@ module_param(temp_threshold, int, 0755);
 module_param(core_limit_temp_degC, uint, 0755);
 module_param(hotplug_temp_degC, uint, 0755);
 
->>>>>>> 136f55d... temp limit parameter fix
+
 static ssize_t show_cc_enabled(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
